@@ -91,7 +91,7 @@ class Student(Base):
     dob = Column(Date, nullable=True)
     guardian_name = Column(String(128), nullable=True)
     guardian_phone = Column(String(32), nullable=True)
-    user = relationship("User")
+    user = relationship("User", lazy="joined")
     klass = relationship("SchoolClass")
     observations = relationship("Observation", back_populates="student",
                                 cascade="all, delete-orphan")
@@ -296,7 +296,7 @@ def delete_class(class_id):
     try:
         n = db.query(Student).filter_by(class_id=class_id).count()
         if n > 0:
-            return False, f"Cannot delete — {n} students in this class."
+            return False, f"Cannot delete â€” {n} students in this class."
         db.query(ClassSubject).filter_by(class_id=class_id).delete()
         db.query(SchoolClass).filter_by(id=class_id).delete()
         db.commit()
@@ -544,9 +544,9 @@ def dashboard_page():
 
 
 def classes_page():
-    st.header("🏫 Classes & Subjects")
+    st.header("ðŸ« Classes & Subjects")
     tab_class, tab_subject, tab_assign = st.tabs(
-        ["📚 Classes", "📘 Subjects", "🔗 Assign Subjects to Classes"])
+        ["ðŸ“š Classes", "ðŸ“˜ Subjects", "ðŸ”— Assign Subjects to Classes"])
 
     with tab_class:
         db = SessionLocal()
@@ -567,7 +567,7 @@ def classes_page():
                          use_container_width=True)
         else:
             st.info("No classes yet.")
-        st.markdown("### ➕ Add a class-section")
+        st.markdown("### âž• Add a class-section")
         with st.form("add_class_form", clear_on_submit=True):
             c1, c2, c3 = st.columns(3)
             new_name = c1.selectbox("Class",
@@ -579,7 +579,7 @@ def classes_page():
                 ok, msg = add_class(new_name, new_sec.strip(), new_curr)
                 st.success(msg) if ok else st.error(msg)
                 st.rerun()
-        st.markdown("### 🗑️ Delete a class-section")
+        st.markdown("### ðŸ—‘ï¸ Delete a class-section")
         if rows:
             options = {f"{r['Class']} ({r['Students']} students)": r["class_id"]
                        for r in rows}
@@ -600,7 +600,7 @@ def classes_page():
                          use_container_width=True)
         else:
             st.info("No subjects yet.")
-        st.markdown("### ➕ Add a subject")
+        st.markdown("### âž• Add a subject")
         with st.form("add_subject_form", clear_on_submit=True):
             new_subject = st.text_input("Subject name", "Mathematics")
             if st.form_submit_button("Create"):
@@ -633,7 +633,7 @@ def classes_page():
             st.dataframe(data, use_container_width=True)
         else:
             st.caption("Nothing assigned yet.")
-        st.markdown("### ➕ Assign a subject to a class")
+        st.markdown("### âž• Assign a subject to a class")
         class_opts = {f"{c.name}-{c.section}": c.id for c in classes}
         subject_opts = {s.name: s.id for s in subjects}
         c1, c2 = st.columns(2)
@@ -647,7 +647,7 @@ def classes_page():
 
 
 def students_page():
-    st.header("👨‍🎓 Students")
+    st.header("ðŸ‘¨â€ðŸŽ“ Students")
     db = SessionLocal()
     try:
         classes = db.query(SchoolClass).order_by(
@@ -655,13 +655,13 @@ def students_page():
     finally:
         db.close()
     if not classes:
-        st.warning("⚠️ Create at least one class-section first "
+        st.warning("âš ï¸ Create at least one class-section first "
                    "(go to **Classes & Subjects**).")
         return
     class_map = {f"{c.name}-{c.section}": c.id for c in classes}
 
     tab_view, tab_add, tab_import, tab_edit = st.tabs(
-        ["📋 All Students", "➕ Add One", "📥 Import CSV/Excel", "✏️ Edit / Delete"])
+        ["ðŸ“‹ All Students", "âž• Add One", "ðŸ“¥ Import CSV/Excel", "âœï¸ Edit / Delete"])
 
     with tab_view:
         db = SessionLocal()
@@ -684,7 +684,7 @@ def students_page():
             st.caption(f"Showing {len(data)} students")
             st.dataframe(data, use_container_width=True)
             df = pd.DataFrame(data)
-            st.download_button("⬇️ Download as CSV",
+            st.download_button("â¬‡ï¸ Download as CSV",
                                df.to_csv(index=False).encode("utf-8"),
                                file_name="students.csv", mime="text/csv")
 
@@ -718,7 +718,7 @@ def students_page():
              "roll_no": "1", "class_name": "XII", "section": "A",
              "curriculum": "CBSE"},
         ])
-        st.download_button("⬇️ Download sample CSV",
+        st.download_button("â¬‡ï¸ Download sample CSV",
                            template.to_csv(index=False).encode("utf-8"),
                            file_name="students_template.csv", mime="text/csv")
         uploaded = st.file_uploader("Upload CSV or Excel",
@@ -728,7 +728,7 @@ def students_page():
                 df = (pd.read_csv(uploaded) if uploaded.name.endswith(".csv")
                       else pd.read_excel(uploaded))
                 st.dataframe(df.head(20), use_container_width=True)
-                if st.button("✅ Confirm Import"):
+                if st.button("âœ… Confirm Import"):
                     ok_count = 0
                     failed = []
                     for _, row in df.iterrows():
@@ -762,7 +762,7 @@ def students_page():
         if not students:
             st.info("No students to edit.")
         else:
-            options = {f"{s.user.full_name if s.user else '-'} — "
+            options = {f"{s.user.full_name if s.user else '-'} â€” "
                        f"{s.admission_no} ({s.class_name}-{s.section})": s.id
                        for s in students}
             choice = st.selectbox("Select a student", list(options.keys()))
@@ -792,8 +792,8 @@ def students_page():
                     "Curriculum", curr_opts,
                     index=curr_opts.index(cur_curr) if cur_curr in curr_opts else 0)
                 c1, c2 = st.columns(2)
-                save = c1.form_submit_button("💾 Save changes")
-                delete = c2.form_submit_button("🗑️ Delete student")
+                save = c1.form_submit_button("ðŸ’¾ Save changes")
+                delete = c2.form_submit_button("ðŸ—‘ï¸ Delete student")
             if save:
                 ok, msg = update_student(sid, new_name.strip(), new_roll.strip(),
                                          class_map[new_cls], new_curr.strip())
@@ -807,10 +807,10 @@ def students_page():
 
 
 def attendance_page():
-    st.header("📋 Attendance")
+    st.header("ðŸ“‹ Attendance")
     tab_mark, tab_history, tab_student, tab_class = st.tabs(
-        ["✍️ Mark Today", "📅 History (Edit Past)", "👤 Student Report",
-         "🏫 Class Report"])
+        ["âœï¸ Mark Today", "ðŸ“… History (Edit Past)", "ðŸ‘¤ Student Report",
+         "ðŸ« Class Report"])
 
     db = SessionLocal()
     try:
@@ -894,7 +894,7 @@ def attendance_page():
         if not students:
             st.info("No students yet.")
         else:
-            options = {f"{s.user.full_name if s.user else '-'} — "
+            options = {f"{s.user.full_name if s.user else '-'} â€” "
                        f"{s.admission_no} ({s.class_name}-{s.section})": s.id
                        for s in students}
             choice = st.selectbox("Student", list(options.keys()), key="sr_student")
@@ -931,7 +931,7 @@ def attendance_page():
         else:
             df = pd.DataFrame(rows)
             st.dataframe(df, use_container_width=True)
-            st.download_button("⬇️ Download class report as CSV",
+            st.download_button("â¬‡ï¸ Download class report as CSV",
                                df.to_csv(index=False).encode("utf-8"),
                                file_name=f"attendance_{chosen_cr}.csv",
                                mime="text/csv")
@@ -989,7 +989,7 @@ def ai_assistant_page():
 # ---------------- STUDENT PAGES ----------------
 
 def student_dashboard_page(user):
-    st.header(f"👋 Welcome, {user['full_name']}")
+    st.header(f"ðŸ‘‹ Welcome, {user['full_name']}")
 
     db = SessionLocal()
     try:
@@ -1006,7 +1006,7 @@ def student_dashboard_page(user):
     finally:
         db.close()
 
-    st.subheader("📊 My Attendance")
+    st.subheader("ðŸ“Š My Attendance")
     today = date.today()
     s30 = student_attendance_summary(student_id, today - timedelta(days=30), today)
     sAll = student_attendance_summary(student_id)
@@ -1019,10 +1019,10 @@ def student_dashboard_page(user):
     c4.metric("Consecutive absences", streak)
 
     if sAll["total"] > 0 and sAll["percent"] < 75:
-        st.error(f"⚠️ Your overall attendance is {sAll['percent']}% — "
+        st.error(f"âš ï¸ Your overall attendance is {sAll['percent']}% â€” "
                  "below 75%. Please attend regularly.")
 
-    st.subheader("👤 My Profile")
+    st.subheader("ðŸ‘¤ My Profile")
     st.markdown(f"**Admission No:** {adm}  \n"
                 f"**Class:** {cls}  \n"
                 f"**Roll No:** {roll}  \n"
