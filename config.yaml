@@ -1,0 +1,14 @@
+﻿school:
+  name: "Example Public School"
+  academic_year: "2024-2025"
+assessment:
+  difficulty_mix:
+    easy: 0.30
+    medium: 0.50
+    hard: 0.20
+attendance:
+  warning_threshold: 0.75
+  consecutive_absence_alert: 2
+ai:
+  enabled: true
+  require_teacher_approval: true
