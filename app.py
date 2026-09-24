@@ -137,6 +137,48 @@ class Topic(Base):
     progress = Column(Float, default=0.0)
 
 
+
+
+class Question(Base):
+    __tablename__ = "questions"
+    id = Column(Integer, primary_key=True)
+    title = Column(String(255), nullable=False)
+    body = Column(Text)
+    answer_hint = Column(Text)
+    marks = Column(Integer, default=5)
+    topic = Column(String(128))
+    difficulty = Column(String(16), default="medium")
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, default=datetime.utcnow)
+    due_date = Column(Date, nullable=True)
+
+
+class QuestionAssignment(Base):
+    __tablename__ = "question_assignments"
+    id = Column(Integer, primary_key=True)
+    question_id = Column(Integer, ForeignKey("questions.id"))
+    class_id = Column(Integer, ForeignKey("classes.id"))
+    assigned_on = Column(Date, default=date.today)
+    assigned_by = Column(Integer, ForeignKey("users.id"))
+    question = relationship("Question", lazy="joined")
+    klass = relationship("SchoolClass", lazy="joined")
+
+
+class QuestionSubmission(Base):
+    __tablename__ = "question_submissions"
+    id = Column(Integer, primary_key=True)
+    assignment_id = Column(Integer, ForeignKey("question_assignments.id"))
+    student_id = Column(Integer, ForeignKey("students.id"))
+    answer_text = Column(Text)
+    file_path = Column(String(255), nullable=True)
+    submitted_at = Column(DateTime, default=datetime.utcnow)
+    marks_awarded = Column(Integer, nullable=True)
+    feedback = Column(Text, nullable=True)
+    status = Column(String(16), default="submitted")
+    assignment = relationship("QuestionAssignment", lazy="joined")
+    student = relationship("Student", lazy="joined")
+
+
 Base.metadata.create_all(bind=engine)
 
 
@@ -505,6 +547,160 @@ def authenticate(username, password):
         return None
     finally:
         db.close()
+
+
+
+
+def create_question(title, body, answer_hint, marks, topic, difficulty,
+                    created_by, due_date=None):
+    db = SessionLocal()
+    try:
+        q = Question(title=title, body=body, answer_hint=answer_hint,
+                     marks=marks, topic=topic, difficulty=difficulty,
+                     created_by=created_by, due_date=due_date)
+        db.add(q); db.commit(); db.refresh(q)
+        return True, "Question created (ID %d)" % q.id, q.id
+    except Exception as e:
+        db.rollback()
+        return False, str(e), None
+    finally:
+        db.close()
+
+
+def assign_question(question_id, class_id, assigned_by):
+    db = SessionLocal()
+    try:
+        existing = db.query(QuestionAssignment).filter_by(
+            question_id=question_id, class_id=class_id).first()
+        if existing:
+            return False, "Already assigned to this class."
+        a = QuestionAssignment(question_id=question_id, class_id=class_id,
+                               assigned_by=assigned_by)
+        db.add(a); db.commit()
+        return True, "Assigned."
+    except Exception as e:
+        db.rollback()
+        return False, str(e)
+    finally:
+        db.close()
+
+
+def unassign_question(assignment_id):
+    db = SessionLocal()
+    try:
+        db.query(QuestionSubmission).filter_by(
+            assignment_id=assignment_id).delete()
+        db.query(QuestionAssignment).filter_by(id=assignment_id).delete()
+        db.commit()
+        return True, "Unassigned."
+    except Exception as e:
+        db.rollback()
+        return False, str(e)
+    finally:
+        db.close()
+
+
+def delete_question(question_id):
+    db = SessionLocal()
+    try:
+        db.query(QuestionAssignment).filter_by(question_id=question_id).delete()
+        db.query(Question).filter_by(id=question_id).delete()
+        db.commit()
+        return True, "Deleted."
+    except Exception as e:
+        db.rollback()
+        return False, str(e)
+    finally:
+        db.close()
+
+
+def all_questions():
+    db = SessionLocal()
+    try:
+        return db.query(Question).order_by(Question.created_at.desc()).all()
+    finally:
+        db.close()
+
+
+def assignments_for_student(student_id):
+    db = SessionLocal()
+    try:
+        student = db.query(Student).filter_by(id=student_id).first()
+        if not student or not student.class_id:
+            return []
+        return db.query(QuestionAssignment).filter_by(
+            class_id=student.class_id).order_by(
+            QuestionAssignment.assigned_on.desc()).all()
+    finally:
+        db.close()
+
+
+def submission_status(assignment_id, student_id):
+    db = SessionLocal()
+    try:
+        return db.query(QuestionSubmission).filter_by(
+            assignment_id=assignment_id, student_id=student_id).first()
+    finally:
+        db.close()
+
+
+def submit_answer(assignment_id, student_id, answer_text):
+    db = SessionLocal()
+    try:
+        existing = db.query(QuestionSubmission).filter_by(
+            assignment_id=assignment_id, student_id=student_id).first()
+        if existing:
+            existing.answer_text = answer_text
+            existing.submitted_at = datetime.utcnow()
+            existing.status = "submitted"
+        else:
+            db.add(QuestionSubmission(assignment_id=assignment_id,
+                                      student_id=student_id,
+                                      answer_text=answer_text))
+        db.commit()
+        return True, "Submitted."
+    except Exception as e:
+        db.rollback()
+        return False, str(e)
+    finally:
+        db.close()
+
+
+def grade_submission(submission_id, marks, feedback):
+    db = SessionLocal()
+    try:
+        s = db.query(QuestionSubmission).filter_by(id=submission_id).first()
+        if not s:
+            return False, "Submission not found."
+        s.marks_awarded = marks
+        s.feedback = feedback
+        s.status = "graded"
+        db.commit()
+        return True, "Graded."
+    except Exception as e:
+        db.rollback()
+        return False, str(e)
+    finally:
+        db.close()
+
+
+def submissions_for_assignment(assignment_id):
+    db = SessionLocal()
+    try:
+        return db.query(QuestionSubmission).filter_by(
+            assignment_id=assignment_id).all()
+    finally:
+        db.close()
+
+
+def all_submissions():
+    db = SessionLocal()
+    try:
+        return db.query(QuestionSubmission).order_by(
+            QuestionSubmission.submitted_at.desc()).all()
+    finally:
+        db.close()
+
 
 
 # ---------------- Pages ----------------
@@ -986,6 +1182,142 @@ def ai_assistant_page():
             st.markdown(resp.choices[0].message.content)
 
 
+
+
+def questions_page():
+    st.header("Questions and Daily Assignments")
+
+    tab_create, tab_assign, tab_review = st.tabs(
+        ["Create Question", "Assign to Class", "Review Submissions"])
+
+    with tab_create:
+        st.subheader("Create a new question")
+        with st.form("create_question_form", clear_on_submit=True):
+            title = st.text_input("Title", "Daily Practice 1")
+            body = st.text_area("Question body", height=120,
+                                placeholder="Example: Find the derivative of x^2 sin(x).")
+            answer_hint = st.text_area("Answer or hint (teacher only)", height=80)
+            c1, c2, c3 = st.columns(3)
+            marks = c1.number_input("Marks", 1, 100, 5)
+            topic = c2.text_input("Topic", "Calculus")
+            difficulty = c3.selectbox("Difficulty",
+                ["easy", "medium", "hard", "olympiad"])
+            due_date = st.date_input("Due date", value=date.today())
+            if st.form_submit_button("Create Question"):
+                if not title.strip() or not body.strip():
+                    st.error("Title and question body are required.")
+                else:
+                    ok, msg, _ = create_question(
+                        title.strip(), body.strip(), answer_hint.strip(),
+                        int(marks), topic.strip(), difficulty,
+                        st.session_state["user"]["id"], due_date)
+                    st.success(msg) if ok else st.error(msg)
+
+        st.markdown("### Existing questions")
+        qs = all_questions()
+        if not qs:
+            st.caption("No questions yet.")
+        else:
+            for q in qs:
+                with st.container(border=True):
+                    c1, c2 = st.columns([4, 1])
+                    c1.markdown("**Q%d: %s**" % (q.id, q.title))
+                    c1.caption("%s · %s · %d marks" % (q.topic or "-",
+                                                        q.difficulty, q.marks))
+                    c1.write(q.body or "")
+                    if c2.button("Delete", key="del_q_%d" % q.id):
+                        delete_question(q.id)
+                        st.rerun()
+
+    with tab_assign:
+        qs = all_questions()
+        db = SessionLocal()
+        try:
+            classes = db.query(SchoolClass).order_by(
+                SchoolClass.name, SchoolClass.section).all()
+        finally:
+            db.close()
+
+        if not qs:
+            st.info("Create a question first.")
+        elif not classes:
+            st.info("Create a class first.")
+        else:
+            st.subheader("Assign a question to a class")
+            q_opts = {}
+            for q in qs:
+                q_opts["Q%d: %s (%d marks)" % (q.id, q.title, q.marks)] = q.id
+            c_opts = {}
+            for c in classes:
+                c_opts["%s-%s" % (c.name, c.section)] = c.id
+
+            c1, c2 = st.columns(2)
+            q_choice = c1.selectbox("Question", list(q_opts.keys()))
+            c_choice = c2.selectbox("Class-Section", list(c_opts.keys()))
+            if st.button("Assign"):
+                ok, msg = assign_question(q_opts[q_choice], c_opts[c_choice],
+                                          st.session_state["user"]["id"])
+                st.success(msg) if ok else st.warning(msg)
+                st.rerun()
+
+            st.markdown("### Current assignments")
+            db = SessionLocal()
+            try:
+                all_a = db.query(QuestionAssignment).order_by(
+                    QuestionAssignment.assigned_on.desc()).all()
+            finally:
+                db.close()
+            if not all_a:
+                st.caption("No assignments yet.")
+            else:
+                for a in all_a:
+                    klass = a.klass
+                    q = a.question
+                    cls_name = "%s-%s" % (klass.name, klass.section) if klass else "?"
+                    title = q.title if q else "?"
+                    with st.container(border=True):
+                        c1, c2 = st.columns([4, 1])
+                        c1.markdown("**%s** assigned to **%s**" % (title, cls_name))
+                        c1.caption("Assigned on %s" % a.assigned_on)
+                        if c2.button("Unassign", key="un_%d" % a.id):
+                            unassign_question(a.id)
+                            st.rerun()
+
+    with tab_review:
+        st.subheader("Review submissions")
+        subs = all_submissions()
+        if not subs:
+            st.caption("No submissions yet.")
+        else:
+            for s in subs:
+                a = s.assignment
+                q = a.question if a else None
+                student = s.student
+                student_name = (student.user.full_name
+                                if student and student.user else "?")
+                title = q.title if q else "?"
+                with st.container(border=True):
+                    st.markdown("**%s** submitted **%s**" % (student_name, title))
+                    if s.answer_text:
+                        st.write("Answer:")
+                        st.write(s.answer_text)
+                    if s.status == "graded":
+                        st.info("Marks: %s / %s | Feedback: %s" %
+                                (s.marks_awarded,
+                                 q.marks if q else "?",
+                                 s.feedback or "(none)"))
+                    else:
+                        c1, c2 = st.columns([1, 3])
+                        marks = c1.number_input(
+                            "Marks", 0, q.marks if q else 100, 0,
+                            key="mk_%d" % s.id)
+                        feedback = c2.text_input("Feedback", key="fb_%d" % s.id)
+                        if st.button("Save marks", key="sv_%d" % s.id):
+                            ok, msg = grade_submission(s.id, marks, feedback)
+                            st.success(msg) if ok else st.error(msg)
+                            st.rerun()
+
+
 # ---------------- STUDENT PAGES ----------------
 
 def student_dashboard_page(user):
@@ -1050,7 +1382,7 @@ else:
         page = st.sidebar.radio(
             "Navigate",
             ["Dashboard", "Classes & Subjects", "Students", "Attendance",
-             "Curriculum", "AI Assistant"])
+             "Questions", "Curriculum", "AI Assistant"])
         if page == "Dashboard":
             dashboard_page()
         elif page == "Classes & Subjects":
@@ -1059,6 +1391,8 @@ else:
             students_page()
         elif page == "Attendance":
             attendance_page()
+        elif page == "Questions":
+            questions_page()
         elif page == "Curriculum":
             curriculum_page()
         elif page == "AI Assistant":
