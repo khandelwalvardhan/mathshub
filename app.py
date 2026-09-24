@@ -9,14 +9,23 @@ load_dotenv()
 from sqlalchemy import (create_engine, Column, Integer, String, Date, DateTime,
                         Float, Text, ForeignKey)
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.pool import NullPool
+from pathlib import Path
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./database/mathshub.db")
-os.makedirs("database", exist_ok=True)
+# --- Database path (works locally and on Streamlit Cloud) ---
+BASE_DIR = Path(__file__).resolve().parent
+DB_DIR = BASE_DIR / "database"
+DB_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DB_DIR / "mathshub.db"
 
-engine = create_engine(
-    DATABASE_URL,
-    connect_args={"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-)
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{DB_PATH}")
+
+# --- Engine: NullPool for Supabase pooler; check_same_thread for SQLite ---
+_engine_kwargs = {"poolclass": NullPool}
+if DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["connect_args"] = {"check_same_thread": False}
+
+engine = create_engine(DATABASE_URL, **_engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -299,3 +308,4 @@ else:
         curriculum_page()
     elif page == "AI Assistant":
         ai_assistant_page()
+
