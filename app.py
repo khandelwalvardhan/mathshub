@@ -1366,6 +1366,79 @@ def student_dashboard_page(user):
         st.error(f" Your overall attendance is {sAll['percent']}%  "
                  "below 75%. Please attend regularly.")
 
+    st.subheader("Today's Questions")
+
+    _assignments = assignments_for_student(student_id)
+    if not _assignments:
+        st.info("No questions assigned to your class yet.")
+    else:
+        for _a in _assignments:
+            _q = _a.question
+            if not _q:
+                continue
+            _status = submission_status(_a.id, student_id)
+            _due = _q.due_date.strftime("%d %b %Y") if _q.due_date else "-"
+            with st.container(border=True):
+                st.markdown("**%s**" % _q.title)
+                st.caption("%s | %s | %d marks | due %s" %
+                           (_q.topic or "-", _q.difficulty, _q.marks, _due))
+                st.write(_q.body or "")
+                if _status:
+                    st.success("Submitted on %s" %
+                               _status.submitted_at.strftime("%d %b %Y %H:%M"))
+                    if _status.status == "graded":
+                        st.info("Marks: %s / %s | Feedback: %s" %
+                                (_status.marks_awarded, _q.marks,
+                                 _status.feedback or "(none)"))
+                    if _status.file_path:
+                        try:
+                            st.image(_status.file_path, caption="Your submission")
+                        except Exception:
+                            pass
+                    with st.expander("Update my answer"):
+                        _new_ans = st.text_area("Your answer",
+                                                _status.answer_text or "",
+                                                key="ans_%d" % _a.id)
+                        _new_file = st.file_uploader(
+                            "Or upload a photo of your work",
+                            type=["png", "jpg", "jpeg", "pdf"],
+                            key="uf_%d" % _a.id)
+                        if st.button("Resubmit", key="resub_%d" % _a.id):
+                            _fpath = None
+                            if _new_file is not None:
+                                _fpath = save_uploaded_file(
+                                    _new_file, prefix="student_%d" % student_id)
+                            _ok, _msg = submit_answer(_a.id, student_id,
+                                                      _new_ans, _fpath)
+                            if _ok:
+                                st.success(_msg)
+                                st.rerun()
+                            else:
+                                st.error(_msg)
+                else:
+                    with st.expander("Answer this question"):
+                        _ans = st.text_area("Write your answer here",
+                                            key="new_ans_%d" % _a.id)
+                        _up = st.file_uploader(
+                            "Or upload a photo of your handwritten solution",
+                            type=["png", "jpg", "jpeg", "pdf"],
+                            key="new_uf_%d" % _a.id)
+                        if st.button("Submit", key="sub_%d" % _a.id):
+                            if not _ans.strip() and _up is None:
+                                st.error("Please write an answer or upload a file.")
+                            else:
+                                _fpath = None
+                                if _up is not None:
+                                    _fpath = save_uploaded_file(
+                                        _up, prefix="student_%d" % student_id)
+                                _ok, _msg = submit_answer(_a.id, student_id,
+                                                          _ans.strip(), _fpath)
+                                if _ok:
+                                    st.success(_msg)
+                                    st.rerun()
+                                else:
+                                    st.error(_msg)
+
     st.subheader(" My Profile")
     st.markdown(f"**Admission No:** {adm}  \n"
                 f"**Class:** {cls}  \n"
