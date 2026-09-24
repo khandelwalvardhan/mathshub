@@ -551,6 +551,23 @@ def authenticate(username, password):
 
 
 
+UPLOAD_DIR = BASE_DIR / "uploads"
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def save_uploaded_file(uploaded_file, prefix="submission"):
+    """Save an uploaded file to disk. Returns path or None."""
+    if uploaded_file is None:
+        return None
+    import time
+    ext = uploaded_file.name.split(".")[-1] if "." in uploaded_file.name else "bin"
+    fname = "%s_%d.%s" % (prefix, int(time.time()), ext)
+    path = UPLOAD_DIR / fname
+    with open(path, "wb") as f:
+        f.write(uploaded_file.getbuffer())
+    return str(path)
+
+
 def create_question(title, body, answer_hint, marks, topic, difficulty,
                     created_by, due_date=None):
     db = SessionLocal()
@@ -644,19 +661,22 @@ def submission_status(assignment_id, student_id):
         db.close()
 
 
-def submit_answer(assignment_id, student_id, answer_text):
+def submit_answer(assignment_id, student_id, answer_text, file_path=None):
     db = SessionLocal()
     try:
         existing = db.query(QuestionSubmission).filter_by(
             assignment_id=assignment_id, student_id=student_id).first()
         if existing:
             existing.answer_text = answer_text
+            if file_path:
+                existing.file_path = file_path
             existing.submitted_at = datetime.utcnow()
             existing.status = "submitted"
         else:
             db.add(QuestionSubmission(assignment_id=assignment_id,
                                       student_id=student_id,
-                                      answer_text=answer_text))
+                                      answer_text=answer_text,
+                                      file_path=file_path))
         db.commit()
         return True, "Submitted."
     except Exception as e:
@@ -680,15 +700,6 @@ def grade_submission(submission_id, marks, feedback):
     except Exception as e:
         db.rollback()
         return False, str(e)
-    finally:
-        db.close()
-
-
-def submissions_for_assignment(assignment_id):
-    db = SessionLocal()
-    try:
-        return db.query(QuestionSubmission).filter_by(
-            assignment_id=assignment_id).all()
     finally:
         db.close()
 
@@ -1186,7 +1197,6 @@ def ai_assistant_page():
 
 def questions_page():
     st.header("Questions and Daily Assignments")
-
     tab_create, tab_assign, tab_review = st.tabs(
         ["Create Question", "Assign to Class", "Review Submissions"])
 
@@ -1195,7 +1205,7 @@ def questions_page():
         with st.form("create_question_form", clear_on_submit=True):
             title = st.text_input("Title", "Daily Practice 1")
             body = st.text_area("Question body", height=120,
-                                placeholder="Example: Find the derivative of x^2 sin(x).")
+                placeholder="Example: Find the derivative of x^2 sin(x).")
             answer_hint = st.text_area("Answer or hint (teacher only)", height=80)
             c1, c2, c3 = st.columns(3)
             marks = c1.number_input("Marks", 1, 100, 5)
@@ -1222,7 +1232,7 @@ def questions_page():
                 with st.container(border=True):
                     c1, c2 = st.columns([4, 1])
                     c1.markdown("**Q%d: %s**" % (q.id, q.title))
-                    c1.caption("%s · %s · %d marks" % (q.topic or "-",
+                    c1.caption("%s | %s | %d marks" % (q.topic or "-",
                                                         q.difficulty, q.marks))
                     c1.write(q.body or "")
                     if c2.button("Delete", key="del_q_%d" % q.id):
@@ -1237,7 +1247,6 @@ def questions_page():
                 SchoolClass.name, SchoolClass.section).all()
         finally:
             db.close()
-
         if not qs:
             st.info("Create a question first.")
         elif not classes:
@@ -1250,7 +1259,6 @@ def questions_page():
             c_opts = {}
             for c in classes:
                 c_opts["%s-%s" % (c.name, c.section)] = c.id
-
             c1, c2 = st.columns(2)
             q_choice = c1.selectbox("Question", list(q_opts.keys()))
             c_choice = c2.selectbox("Class-Section", list(c_opts.keys()))
@@ -1259,7 +1267,6 @@ def questions_page():
                                           st.session_state["user"]["id"])
                 st.success(msg) if ok else st.warning(msg)
                 st.rerun()
-
             st.markdown("### Current assignments")
             db = SessionLocal()
             try:
@@ -1301,6 +1308,11 @@ def questions_page():
                     if s.answer_text:
                         st.write("Answer:")
                         st.write(s.answer_text)
+                    if s.file_path:
+                        try:
+                            st.image(s.file_path, caption="Uploaded work")
+                        except Exception:
+                            st.caption("Uploaded file: %s" % s.file_path)
                     if s.status == "graded":
                         st.info("Marks: %s / %s | Feedback: %s" %
                                 (s.marks_awarded,
